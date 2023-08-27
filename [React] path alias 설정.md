@@ -51,7 +51,7 @@ npm i -D @craco/craco
 4. `react-app-alias` 설치
 (`craco-alias` 패키지를 일반적으로 사용하지만 더 이상 관리되지 않는 패키지라서 다른 패키지를 이용, [참고](https://github.com/risen228/craco-alias))
 ```
-npm install --save-dev react-app-alias
+npm i -D react-app-alias
 ```
 
 
