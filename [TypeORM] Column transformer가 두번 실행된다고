@@ -1,0 +1,69 @@
+
+![image](https://d1ccleacxg8gcm.cloudfront.net/lhjeong60/images/773hbj61agdfh.png)
+
+## 암호화가 필요한 Column??
+사용자의 개인정보는 DB에 암호화되어 저장되어야하지만 NestJS 상에서는 복호화해서 데이터를 조작해야하는 경우,
+아래처럼  `@BeforeInsert`, `@BeforeUpdate`, `@AfterLoad` 등의 리스너를 이용하여 구현했었다.
+
+``` ts
+@Entity()
+class MyEntity {
+
+  // ... 중략 ...  
+
+  @Column({ nullable: true, type: 'varchar', length: 50 })
+  name: string;
+
+  // ... 중략 ...
+
+  @BeforeInsert()
+  @BeforeUpdate()
+  async encryptPersonalInfo() {
+    // 데이터 암호화
+  }
+
+  @AfterLoad()
+  async decryptPersonalInfo() {
+    // 데이터 복호화
+  }
+}
+```
+
+
+## 보기 불편하다...
+하지만 엔티티의 컬럼이 많아지면, 암/복호화가 필요한 컬럼과 리스너가 한번에 확인할 수 없어 불편한 상황들이 생긴다.
+그래서 커스텀 데코레이터로 한번에 묶기위해 `@Column` 데코레이터의 `transformer` 옵션을 이용했다. [공식문서](https://typeorm.io/entities#column-options)
+from은 DB에서 읽을때, to는 DB로 쓸때의 transformer를 전달할 수 있다. 이를 이용하면 아래와 같이 변한다.
+
+``` ts
+@Entity()
+class MyEntity {
+
+  // ... 중략 ...  
+
+  @Column({ nullable: true, type: 'varchar', transformer: {
+    from: (value) => 복호화(value),
+    to: (value) => 암호화(value)
+  }})
+  name: string;
+
+  // ... 중략 ...
+}
+```
+
+몇가지 생각해볼점은, 암호화될 컬럼은 대부분 문자열 컬럼으로 지정해야할 것이고, 최대 length는 암호화 알고리즘에 따라 결정해야할 것이다.
+
+
+## (본론) update는 한번인데 to 함수는 왜 2번 실행돼??
+`transformer`를 이용하여 개발을 진행하던 중, update 함수는 한 번 실행되는데, `to` 함수가 2번 실행되는 문제가 발생했다.
+2번 실행중 1번의 실행에서는 `value`가 `undefined`로 들어와서, 내부 로직 중 에러가 발생해 알게된 문제였다.
+
+이것저것 찾아보며 확인한 결과, `from`, `to` 함수 내부에서 `async` `await` 등의 비동기 함수를 사용했을때 문제가 발생했다.
+비슷한 [이슈](https://github.com/typeorm/typeorm/issues/1050)가 발생했었고, 동기적으로 실행했을때는 정상 동작한다는 것을 확인할 수 있었다.
+
+
+## (결론) 비동기를 제거하자!
+to 함수 내에서 `bcrypt.genSalt`, `bcrypt.hash` 함수를 사용하고 있었는데, 이들이 비동기 함수였기에 to 함수도 비동기 함수로 작성을 한 것이 문제였다.
+따라서 [bcrypt 공식문서](https://github.com/kelektiv/node.bcrypt.js?tab=readme-ov-file#sync)를 확인해보니 동기 함수도 제공해주기 때문에 `bcrypt.genSaltSync`, `bcrypt.hashSync`를 이용하니 문제없이 잘 해결되었다!
+
+
